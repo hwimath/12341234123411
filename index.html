@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>휘매쓰 연산 챌린지!</title>
+<title>세 자리 나누기 몇 십 몇</title>
 <style>
     body {
         font-family: sans-serif;
@@ -109,13 +109,27 @@
     #popup-close-btn:hover {
         background: #45a049;
     }
+
+    /* 점수 전송 영역 */
+    #send-score-btn {
+        display: none; /* 기본적으로 숨김, 게임 종료 후 보이게 처리 */
+        margin-top: 20px;
+    }
+    #response {
+        margin-top: 15px;
+        white-space: pre-wrap;
+        text-align: left;
+    }
 </style>
 </head>
 <body>
 
 <div id="game-container">
-    <h1>휘매쓰 연산 챌린지!</h1>
+    <h1>세 자리 나누기 몇 십 몇</h1>
+
     <div id="start-screen">
+        <p>이름을 입력해주세요:</p>
+        <p><input type="text" id="player-name-input" style="font-size: 16px; padding: 5px;"></p>
         <p>난이도를 선택해주세요.</p>
         <div>
             <button class="btn" data-diff="최상">최상(20초, 정답당20점)</button>
@@ -146,14 +160,33 @@
         <div id="popup-message"></div>
         <button id="popup-close-btn">닫기</button>
     </div>
+
+    <!-- 게임 종료 후 점수 전송 버튼 및 서버 응답 영역 -->
+    <button id="send-score-btn" class="btn">점수 전송</button>
+    <div id="response"></div>
 </div>
 
 <script>
-// 60문제 (나머지 0 없음)
-// 문제 형식: "A ÷ B" 몫, 나머지 구하기
-// 문제데이터: {q:"...", a_quot:몫, a_rem:나머지, sol:"풀이"}
+// 전역 변수들
+let userName = ""; 
+let currentDifficulty = null;
+let currentQuestionIndex = 0;
+let score = 0;
+let lives = 3;
+let globalTime = 0;
+let energyDecrementInterval = null;
+let currentTimeLimit = Infinity; 
+let currentAnswerQuot = null;
+let currentAnswerRem = null;
+let currentSolution = "";
+let freePass = 0; // 면제권
+let usedAllQuestions = false;
 
-// 아래는 이전에 만든 60문제 데이터
+// 난이도별 설정
+let difficultyTime = { "최상":20, "상":30, "중":40, "하":Infinity };
+let difficultyScore = { "최상":20, "상":15, "중":13, "하":10 };
+
+// 60문제 (나머지 0 없음)
 const problems = [
 {q:"325 ÷ 12", a_quot:27, a_rem:1, sol:"12×27=324, 325-324=1"},
 {q:"450 ÷ 14", a_quot:32, a_rem:2, sol:"14×32=448, 450-448=2"},
@@ -217,28 +250,11 @@ const problems = [
 {q:"946 ÷ 63", a_quot:15, a_rem:1, sol:"63×15=945, 946-945=1"}
 ];
 
-// 난이도별 설정
-let difficultyTime = { "최상":20, "상":30, "중":40, "하":Infinity };
-let difficultyScore = { "최상":20, "상":15, "중":13, "하":10 };
-
-let currentDifficulty = null;
-let currentQuestionIndex = 0;
-let score = 0;
-let lives = 3;
-let globalTime = 0;
-let energyDecrementInterval = null;
-let currentTimeLimit = Infinity; 
-let currentAnswerQuot = null;
-let currentAnswerRem = null;
-let currentSolution = "";
-let freePass = 0; // 면제권 (요구사항 없었지만 이전 예제와 일관)
-let usedAllQuestions = false;
-
 // 문제 순서 섞기
 function shuffle(array) {
-    for (let i=array.length-1;i>0;i--){
-        let j=Math.floor(Math.random()*(i+1));
-        [array[i], array[j]]=[array[j], array[i]];
+    for (let i = array.length - 1; i > 0; i--) {
+        let j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
     }
 }
 shuffle(problems);
@@ -274,13 +290,13 @@ function startGame(difficulty) {
         window.globalTimerInterval = setInterval(function() {
             globalTime++;
             document.getElementById("global-timer").textContent = "총 경과 시간: " + globalTime + "초";
-        },1000);
+        }, 1000);
     }
     nextQuestion();
 }
 
 function getRandomQuestion() {
-    let r = Math.floor(Math.random()*problems.length);
+    let r = Math.floor(Math.random() * problems.length);
     return problems[r];
 }
 
@@ -312,18 +328,18 @@ function nextQuestion() {
         let remainTime = currentTimeLimit;
         const energyBar = document.getElementById("energy-bar");
         energyBar.style.width = "100%";
-        let decrement = 100 / (remainTime*2);
+        let decrement = 100 / (remainTime * 2);
         let intervalCount = 0;
 
-        energyDecrementInterval = setInterval(function(){
+        energyDecrementInterval = setInterval(function() {
             intervalCount++;
-            let w = 100 - decrement*intervalCount;
+            let w = 100 - decrement * intervalCount;
             if (w <= 0) {
                 w = 0;
                 clearInterval(energyDecrementInterval);
                 timeUp();
             }
-            energyBar.style.width = w+"%";
+            energyBar.style.width = w + "%";
         }, 500);
     } else {
         const energyBar = document.getElementById("energy-bar");
@@ -344,7 +360,7 @@ function timeUp() {
 }
 
 function chancePopupCheck() {
-    // 확률적 보상 (이전 예제에서 유지)
+    // 정답 시 확률적 보상
     let rnd = Math.random();
     if (rnd < 0.0001) {
         showPopup("축하합니다! 5000원 상품권 당첨!");
@@ -357,13 +373,13 @@ function chancePopupCheck() {
 }
 
 function checkAnswer() {
-    const userQuot = parseInt(document.getElementById("answer-quotient-input").value,10);
-    const userRem = parseInt(document.getElementById("answer-remainder-input").value,10);
+    const userQuot = parseInt(document.getElementById("answer-quotient-input").value, 10);
+    const userRem = parseInt(document.getElementById("answer-remainder-input").value, 10);
     if (isNaN(userQuot) || isNaN(userRem)) return;
     clearInterval(energyDecrementInterval);
     document.getElementById("energy-bar").style.width = "100%";
 
-    if (userQuot===currentAnswerQuot && userRem===currentAnswerRem) {
+    if (userQuot === currentAnswerQuot && userRem === currentAnswerRem) {
         // 정답
         score += difficultyScore[currentDifficulty];
         document.getElementById("score").textContent = "점수 : " + score;
@@ -372,9 +388,8 @@ function checkAnswer() {
         setTimeout(nextQuestion, 1000);
     } else {
         // 오답
-        showPopup("오답!\n정답: 몫="+currentAnswerQuot+", 나머지="+currentAnswerRem+"\n풀이: "+currentSolution);
-        // 닫기 누를 때까지 대기 -> 팝업 닫기 버튼에서 처리하지 않고 여기서 X
-        document.getElementById("popup-close-btn").onclick = function(){
+        showPopup("오답!\n정답: 몫=" + currentAnswerQuot + ", 나머지=" + currentAnswerRem + "\n풀이: " + currentSolution);
+        document.getElementById("popup-close-btn").onclick = function() {
             document.getElementById("popup").style.display = "none";
             if (freePass > 0) {
                 freePass--;
@@ -398,11 +413,20 @@ function gameOver() {
     document.getElementById("answer-quotient-input").style.display = "none";
     document.getElementById("answer-remainder-input").style.display = "none";
     document.getElementById("submit-answer-btn").style.display = "none";
+
+    // 게임 종료 후 점수 전송 버튼 노출
+    document.getElementById("send-score-btn").style.display = "inline-block";
 }
 
 // 난이도 선택
 document.querySelectorAll('#start-screen .btn').forEach(btn => {
-    btn.addEventListener('click', function(){
+    btn.addEventListener('click', function() {
+        // 이름 입력 확인
+        userName = document.getElementById("player-name-input").value.trim();
+        if (!userName) {
+            alert("이름을 입력해주세요!");
+            return;
+        }
         let diff = this.getAttribute("data-diff");
         startGame(diff);
     });
@@ -412,16 +436,66 @@ document.querySelectorAll('#start-screen .btn').forEach(btn => {
 document.getElementById("submit-answer-btn").addEventListener("click", checkAnswer);
 
 // 엔터키 제출 (몫입력, 나머지입력 둘다 대상)
-document.getElementById("answer-quotient-input").addEventListener("keydown",function(e){
-    if (e.key==="Enter") {
+document.getElementById("answer-quotient-input").addEventListener("keydown", function(e) {
+    if (e.key === "Enter") {
         checkAnswer();
     }
 });
-document.getElementById("answer-remainder-input").addEventListener("keydown",function(e){
-    if (e.key==="Enter") {
+document.getElementById("answer-remainder-input").addEventListener("keydown", function(e) {
+    if (e.key === "Enter") {
         checkAnswer();
     }
 });
+
+// 점수 전송 버튼 클릭 시 서버 전송
+document.getElementById("send-score-btn").addEventListener("click", function() {
+    saveData("세 자리 나누기 몇 십 몇", userName, score, globalTime);
+});
+
+/* (4) 데이터 서버 전송 함수 */
+function saveData(game, name, score, elapsedTime) {
+    const FUNCTION_URL = "https://us-central1-record-f420d.cloudfunctions.net/report";
+
+    const requestData = {
+        game,
+        name,
+        score: parseInt(score, 10),
+        elapsedTime: parseInt(elapsedTime, 10)
+    };
+
+    try {
+        const response = fetch(FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestData)
+        });
+
+        const responseData = response.then(res => res.json());
+
+        // fetch는 비동기이므로, 아래 로직은 Promise가 완전히 처리되기 전에 실행될 수 있음.
+        // 사용자가 준 예제 코드에 맞춰 아래처럼 작성했으나, 정확한 처리를 위해서는 async/await 혹은 then 체인 활용을 권장합니다.
+        response.then(res => {
+            responseData.then(data => {
+                if (res.ok) {
+                    document.getElementById('response').innerText =
+                        `성공: ${JSON.stringify(data, null, 2)}`;
+                } else {
+                    document.getElementById('response').innerText =
+                        `오류: ${JSON.stringify(data, null, 2)}`;
+                }
+            });
+        }).catch(error => {
+            document.getElementById('response').innerText =
+                `네트워크 오류: ${error.message}`;
+        });
+    } catch (error) {
+        console.error('요청 실패:', error);
+        document.getElementById('response').innerText =
+            `네트워크 오류: ${error.message}`;
+    }
+}
 </script>
 </body>
 </html>
